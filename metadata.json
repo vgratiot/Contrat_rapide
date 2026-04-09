@@ -1,0 +1,5 @@
+{
+  "name": "Saisonnier-Easy",
+  "description": "Application de recrutement rapide pour agriculteurs. Scan d'identité, génération de contrat et DPAE en 60 secondes.",
+  "requestFramePermissions": ["camera"]
+}
