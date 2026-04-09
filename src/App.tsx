@@ -69,27 +69,56 @@ export default function App() {
       canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.filter = 'grayscale(100%) contrast(150%)';
+        // Amélioration de l'image pour l'OCR
+        ctx.filter = 'grayscale(100%) contrast(150%) brightness(110%)';
         ctx.drawImage(videoRef.current, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg');
+        const imageData = canvas.toDataURL('image/jpeg', 0.9);
         
         try {
           const worker = await createWorker('fra');
           const { data: { text } } = await worker.recognize(imageData);
           await worker.terminate();
           
-          // Simple parsing logic (mock for demo)
-          const lines = text.split('\n');
+          console.log("OCR Raw Text:", text);
+          
+          // Logique de parsing améliorée
+          const lines = text.split('\n').map(l => l.trim().toUpperCase()).filter(l => l.length > 0);
+          
+          let lastName = '';
+          let firstName = '';
+          let dob = '';
+
+          // Recherche de mots clés courants sur les CNI
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.includes('NOM') && !lastName) {
+              lastName = line.replace(/NOM[:\s]*/, '').trim();
+              if (!lastName && i + 1 < lines.length) lastName = lines[i+1];
+            }
+            if ((line.includes('PRENOM') || line.includes('PRÉNOM')) && !firstName) {
+              firstName = line.replace(/PR[EÉ]NOMS?[:\s]*/, '').split(' ')[0].trim();
+              if (!firstName && i + 1 < lines.length) firstName = lines[i+1].split(' ')[0];
+            }
+            // Recherche de date (format DD.MM.YYYY ou DD/MM/YYYY)
+            const dateMatch = line.match(/(\d{2})[\.\/\s](\d{2})[\.\/\s](\d{4})/);
+            if (dateMatch && !dob) {
+              dob = `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`;
+            }
+          }
+
           setWorkerData(prev => ({
             ...prev,
-            last_name: lines[0]?.replace('NOM', '').trim() || '',
-            first_name: lines[1]?.replace('PRENOM', '').trim() || '',
+            last_name: lastName || lines[0] || '',
+            first_name: firstName || lines[1] || '',
+            dob: dob || prev.dob
           }));
           
           setStep('form');
           // Stop camera
           const stream = videoRef.current.srcObject as MediaStream;
-          stream.getTracks().forEach(track => track.stop());
+          if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+          }
         } catch (err) {
           console.error("OCR error:", err);
           setStep('form'); // Fallback to manual entry
@@ -125,23 +154,28 @@ export default function App() {
       address: "12 Route des Vignes, 33000 Bordeaux"
     };
     
-    const doc = generateContractPDF(workerData, employer, contractData, signature || '');
-    const pdfBlob = doc.output('blob');
-    const file = new File([pdfBlob], `Contrat_${workerData.last_name}.pdf`, { type: 'application/pdf' });
+    try {
+      const doc = generateContractPDF(workerData, employer, contractData, signature || '');
+      const pdfBlob = doc.output('blob');
+      const fileName = `Contrat_${workerData.last_name || 'Saisonnier'}.pdf`;
+      const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
 
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
+      // Vérification rigoureuse du support de partage
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
           title: 'Contrat Saisonnier-Easy',
           text: `Bonjour ${workerData.first_name}, voici votre contrat de travail.`,
         });
-      } catch (err) {
-        console.error("Share error:", err);
-        doc.save(`Contrat_${workerData.last_name}.pdf`);
+      } else {
+        // Fallback immédiat si le partage n'est pas supporté
+        doc.save(fileName);
       }
-    } else {
-      doc.save(`Contrat_${workerData.last_name}.pdf`);
+    } catch (err) {
+      console.error("Share/Download error:", err);
+      // Fallback de secours ultime
+      const doc = generateContractPDF(workerData, employer, contractData, signature || '');
+      doc.save(`Contrat_${workerData.last_name || 'Saisonnier'}.pdf`);
     }
   };
 
