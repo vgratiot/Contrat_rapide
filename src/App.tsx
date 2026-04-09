@@ -129,7 +129,7 @@ export default function App() {
     const pdfBlob = doc.output('blob');
     const file = new File([pdfBlob], `Contrat_${workerData.last_name}.pdf`, { type: 'application/pdf' });
 
-    if (navigator.share) {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({
           files: [file],
@@ -138,10 +138,40 @@ export default function App() {
         });
       } catch (err) {
         console.error("Share error:", err);
+        doc.save(`Contrat_${workerData.last_name}.pdf`);
       }
     } else {
       doc.save(`Contrat_${workerData.last_name}.pdf`);
     }
+  };
+
+  const handleDownloadDPAE = () => {
+    const employer = {
+      company_name: "Domaine des Plaines",
+      siret: "123 456 789 00012",
+    };
+
+    const dpaeData = [
+      employer.siret,
+      employer.company_name,
+      workerData.last_name.toUpperCase(),
+      workerData.first_name,
+      workerData.nir,
+      workerData.dob,
+      contractData.start_date,
+      contractData.job_title,
+      "SAISONNIER",
+    ];
+
+    const content = dpaeData.join(';');
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `DPAE_${workerData.last_name}_${contractData.start_date}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -403,6 +433,7 @@ export default function App() {
               </button>
 
               <button 
+                onClick={handleDownloadDPAE}
                 className="w-full border-4 border-black p-5 rounded-3xl flex items-center justify-center gap-3 font-black uppercase brutal-shadow"
               >
                 <FileText size={24} />
