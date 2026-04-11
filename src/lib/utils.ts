@@ -20,5 +20,19 @@ export const offlineManager = {
     const existing = JSON.parse(localStorage.getItem('pending_contracts') || '[]');
     const filtered = existing.filter((c: any) => c.id !== id);
     localStorage.setItem('pending_contracts', JSON.stringify(filtered));
+  },
+  saveEmployer: (data: any) => {
+    localStorage.setItem('employer_settings', JSON.stringify(data));
+  },
+  getEmployer: () => {
+    const defaultEmployer = {
+      company_name: "Domaine des Plaines",
+      siret: "123 456 789 00012",
+      address: "12 Route des Vignes, 33000 Bordeaux",
+      msa_number: "",
+      custom_clause: "Le présent contrat est conclu au titre de l'article L.1242-2 du Code du Travail."
+    };
+    const stored = localStorage.getItem('employer_settings');
+    return stored ? JSON.parse(stored) : defaultEmployer;
   }
 };

@@ -44,6 +44,12 @@ export const generateContractPDF = (worker: any, employer: any, contract: any, s
   y += 45;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(9);
+  
+  const customClause = employer.custom_clause || "Le présent contrat est conclu au titre de l'article L.1242-2 du Code du Travail.";
+  const splitClause = doc.splitTextToSize(customClause, 170);
+  doc.text(splitClause, margin, y);
+  
+  y += (splitClause.length * 5) + 5;
   doc.text("Le salarié reconnaît avoir reçu un exemplaire du présent contrat au moment de sa signature.", margin, y);
 
   if (signatureBase64) {

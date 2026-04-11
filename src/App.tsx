@@ -19,12 +19,13 @@ import { createWorker } from 'tesseract.js';
 import { generateContractPDF } from './lib/pdfGenerator';
 import { offlineManager } from './lib/utils';
 
-type Step = 'dashboard' | 'scan' | 'form' | 'signature' | 'success' | 'sync';
+type Step = 'dashboard' | 'scan' | 'form' | 'signature' | 'success' | 'sync' | 'settings';
 
 export default function App() {
   const [step, setStep] = useState<Step>('dashboard');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncResults, setSyncResults] = useState<Record<number, 'loading' | 'success' | 'error'>>({});
+  const [employerInfo, setEmployerInfo] = useState(offlineManager.getEmployer());
   const [workerData, setWorkerData] = useState({
     first_name: '',
     last_name: '',
@@ -138,11 +139,7 @@ export default function App() {
       worker: workerData,
       contract: contractData,
       signature: signatureData,
-      employer: {
-        company_name: "Domaine des Plaines",
-        siret: "123 456 789 00012",
-        address: "12 Route des Vignes, 33000 Bordeaux"
-      }
+      employer: employerInfo
     };
     
     offlineManager.saveContract(fullContract);
@@ -150,14 +147,8 @@ export default function App() {
   };
 
   const handleShare = async () => {
-    const employer = {
-      company_name: "Domaine des Plaines",
-      siret: "123 456 789 00012",
-      address: "12 Route des Vignes, 33000 Bordeaux"
-    };
-    
     try {
-      const doc = generateContractPDF(workerData, employer, contractData, signature || '');
+      const doc = generateContractPDF(workerData, employerInfo, contractData, signature || '');
       const pdfBlob = doc.output('blob');
       const fileName = `Contrat_${workerData.last_name || 'Saisonnier'}.pdf`;
       const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
@@ -176,7 +167,7 @@ export default function App() {
     } catch (err) {
       console.error("Share/Download error:", err);
       // Fallback de secours ultime
-      const doc = generateContractPDF(workerData, employer, contractData, signature || '');
+      const doc = generateContractPDF(workerData, employerInfo, contractData, signature || '');
       doc.save(`Contrat_${workerData.last_name || 'Saisonnier'}.pdf`);
     }
   };
@@ -210,14 +201,9 @@ export default function App() {
     setPendingContracts(offlineManager.getPending());
   };
   const handleDownloadDPAE = () => {
-    const employer = {
-      company_name: "Domaine des Plaines",
-      siret: "123 456 789 00012",
-    };
-
     const dpaeData = [
-      employer.siret,
-      employer.company_name,
+      employerInfo.siret,
+      employerInfo.company_name,
       workerData.last_name.toUpperCase(),
       workerData.first_name,
       workerData.nir,
@@ -252,9 +238,14 @@ export default function App() {
             <header className="mb-8 flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-black uppercase tracking-tighter italic">Saisonnier-Easy</h1>
-                <p className="text-sm font-bold text-gray-500">Domaine des Plaines</p>
+                <p className="text-sm font-bold text-gray-500">{employerInfo.company_name}</p>
               </div>
-              <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+              <button 
+                onClick={() => setStep('settings')}
+                className="p-2 border-4 border-black rounded-full brutal-shadow bg-white"
+              >
+                <Users size={20} />
+              </button>
             </header>
 
             {pendingContracts.length > 0 && (
@@ -270,13 +261,26 @@ export default function App() {
               </div>
             )}
 
-            <button 
-              onClick={() => { setStep('scan'); startCamera(); }}
-              className="w-full bg-brand-yellow p-8 rounded-3xl border-4 border-black flex flex-col items-center gap-4 brutal-shadow-lg mb-12"
-            >
-              <PlusCircle size={64} strokeWidth={2.5} />
-              <span className="text-2xl font-black text-center uppercase">Scanner un<br/>nouveau saisonnier</span>
-            </button>
+            <div className="grid grid-cols-1 gap-4 mb-8">
+              <button 
+                onClick={() => { setStep('scan'); startCamera(); }}
+                className="w-full bg-brand-yellow p-6 rounded-3xl border-4 border-black flex flex-col items-center gap-2 brutal-shadow-lg"
+              >
+                <Camera size={40} strokeWidth={2.5} />
+                <span className="text-xl font-black text-center uppercase">Scanner Pièce d'identité</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                  setWorkerData({ first_name: '', last_name: '', dob: '', nir: '', address: '' });
+                  setStep('form');
+                }}
+                className="w-full bg-white p-6 rounded-3xl border-4 border-black flex flex-col items-center gap-2 brutal-shadow-lg"
+              >
+                <PlusCircle size={40} strokeWidth={2.5} />
+                <span className="text-xl font-black text-center uppercase">Saisie Manuelle</span>
+              </button>
+            </div>
 
             <section>
               <h2 className="text-xl font-black mb-4 flex items-center gap-2 italic uppercase">
@@ -336,7 +340,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="p-8 bg-black">
+            <div className="p-8 bg-black space-y-4">
               <button 
                 onClick={captureAndOCR}
                 disabled={isProcessing}
@@ -350,6 +354,21 @@ export default function App() {
                     <span className="text-xl font-black uppercase">Capturer & Analyser</span>
                   </>
                 )}
+              </button>
+              
+              <button 
+                onClick={() => {
+                  setWorkerData({ first_name: '', last_name: '', dob: '', nir: '', address: '' });
+                  setStep('form');
+                  // Stop camera
+                  if (videoRef.current && videoRef.current.srcObject) {
+                    const stream = videoRef.current.srcObject as MediaStream;
+                    stream.getTracks().forEach(track => track.stop());
+                  }
+                }}
+                className="w-full bg-white p-4 rounded-2xl border-4 border-black flex items-center justify-center gap-2 font-black uppercase brutal-shadow"
+              >
+                Passer en saisie manuelle
               </button>
             </div>
           </motion.div>
@@ -408,6 +427,17 @@ export default function App() {
 
             <div className="bg-gray-50 p-4 rounded-2xl border-4 border-black mb-8">
               <h3 className="font-black text-sm uppercase mb-4">Conditions Contrat</h3>
+              
+              <div className="mb-4">
+                <label className="text-[10px] font-black text-gray-500 uppercase mb-1 block">Date d'effet (Début)</label>
+                <input 
+                  type="date"
+                  value={contractData.start_date}
+                  onChange={e => setContractData({...contractData, start_date: e.target.value})}
+                  className="w-full border-2 border-black p-2 rounded-xl font-bold focus:outline-none bg-white"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {['Vendanges', 'Récolte', 'Taille', 'Autre'].map(job => (
                   <button 
@@ -585,6 +615,71 @@ export default function App() {
                 </button>
               </>
             )}
+          </motion.div>
+        )}
+        {step === 'settings' && (
+          <motion.div 
+            key="settings"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="p-4 flex-1 flex flex-col overflow-y-auto"
+          >
+            <header className="flex items-center gap-4 mb-8">
+              <button onClick={() => setStep('dashboard')} className="p-2 border-4 border-black rounded-full brutal-shadow">
+                <X size={24} />
+              </button>
+              <h1 className="text-2xl font-black italic uppercase">Paramètres</h1>
+            </header>
+
+            <div className="space-y-6 mb-8">
+              <div>
+                <label className="text-xs font-black text-gray-500 uppercase">Nom de l'exploitation</label>
+                <input 
+                  type="text"
+                  value={employerInfo.company_name}
+                  onChange={e => setEmployerInfo({...employerInfo, company_name: e.target.value})}
+                  className="w-full border-b-4 border-black p-2 text-xl font-bold focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-black text-gray-500 uppercase">SIRET</label>
+                <input 
+                  type="text"
+                  value={employerInfo.siret}
+                  onChange={e => setEmployerInfo({...employerInfo, siret: e.target.value})}
+                  className="w-full border-b-4 border-black p-2 text-xl font-bold focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-black text-gray-500 uppercase">Adresse</label>
+                <input 
+                  type="text"
+                  value={employerInfo.address}
+                  onChange={e => setEmployerInfo({...employerInfo, address: e.target.value})}
+                  className="w-full border-b-4 border-black p-2 text-xl font-bold focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-black text-gray-500 uppercase">Clause personnalisée du contrat</label>
+                <textarea 
+                  value={employerInfo.custom_clause}
+                  onChange={e => setEmployerInfo({...employerInfo, custom_clause: e.target.value})}
+                  className="w-full border-4 border-black p-2 text-sm font-bold focus:outline-none h-32 bg-gray-50 rounded-xl"
+                  placeholder="Ex: Le présent contrat est conclu au titre de l'article L.1242-2..."
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={() => {
+                offlineManager.saveEmployer(employerInfo);
+                setStep('dashboard');
+              }}
+              className="w-full bg-black text-brand-yellow p-6 rounded-3xl font-black text-xl uppercase brutal-shadow mt-auto"
+            >
+              Enregistrer
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
