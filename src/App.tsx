@@ -19,10 +19,12 @@ import { createWorker } from 'tesseract.js';
 import { generateContractPDF } from './lib/pdfGenerator';
 import { offlineManager } from './lib/utils';
 
-type Step = 'dashboard' | 'scan' | 'form' | 'signature' | 'success';
+type Step = 'dashboard' | 'scan' | 'form' | 'signature' | 'success' | 'sync';
 
 export default function App() {
   const [step, setStep] = useState<Step>('dashboard');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResults, setSyncResults] = useState<Record<number, 'loading' | 'success' | 'error'>>({});
   const [workerData, setWorkerData] = useState({
     first_name: '',
     last_name: '',
@@ -179,6 +181,34 @@ export default function App() {
     }
   };
 
+  const handleSyncAll = async () => {
+    setIsSyncing(true);
+    const contracts = [...pendingContracts];
+    
+    for (const contract of contracts) {
+      try {
+        setSyncResults(prev => ({ ...prev, [contract.id]: 'loading' }));
+        
+        // Simuler un envoi vers Supabase (puisqu'on utilise des placeholders)
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Si on avait une vraie config Supabase, on ferait :
+        /*
+        const { error } = await supabase.from('contracts').insert([contract]);
+        if (error) throw error;
+        */
+        
+        offlineManager.removeSynced(contract.id);
+        setSyncResults(prev => ({ ...prev, [contract.id]: 'success' }));
+      } catch (error) {
+        console.error("Sync error:", error);
+        setSyncResults(prev => ({ ...prev, [contract.id]: 'error' }));
+      }
+    }
+    
+    setIsSyncing(false);
+    setPendingContracts(offlineManager.getPending());
+  };
   const handleDownloadDPAE = () => {
     const employer = {
       company_name: "Domaine des Plaines",
@@ -228,12 +258,15 @@ export default function App() {
             </header>
 
             {pendingContracts.length > 0 && (
-              <div className="bg-orange-500 text-white p-4 rounded-2xl mb-6 flex justify-between items-center brutal-shadow">
+              <div 
+                onClick={() => setStep('sync')}
+                className="bg-orange-500 text-white p-4 rounded-2xl mb-6 flex justify-between items-center brutal-shadow cursor-pointer"
+              >
                 <div className="flex items-center gap-2">
                   <AlertTriangle size={20} />
                   <span className="font-black text-sm uppercase">{pendingContracts.length} CONTRATS À SYNCHRONISER</span>
                 </div>
-                <RefreshCw size={20} className="animate-spin-slow" />
+                <RefreshCw size={20} className={isSyncing ? "animate-spin" : ""} />
               </div>
             )}
 
@@ -388,7 +421,16 @@ export default function App() {
               </div>
               <div className="flex items-center justify-between bg-white p-3 rounded-xl border-2 border-black">
                 <span className="font-black text-xs uppercase">Salaire (Brut/h)</span>
-                <span className="font-black text-lg">11.65€</span>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number"
+                    step="0.01"
+                    value={contractData.hourly_rate}
+                    onChange={e => setContractData({...contractData, hourly_rate: parseFloat(e.target.value) || 0})}
+                    className="w-20 text-right font-black text-lg focus:outline-none bg-transparent"
+                  />
+                  <span className="font-black text-lg">€</span>
+                </div>
               </div>
             </div>
 
@@ -481,6 +523,68 @@ export default function App() {
                 Retour à l'accueil
               </button>
             </div>
+          </motion.div>
+        )}
+        {step === 'sync' && (
+          <motion.div 
+            key="sync"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="p-4 flex-1 flex flex-col"
+          >
+            <header className="flex items-center gap-4 mb-8">
+              <button onClick={() => setStep('dashboard')} className="p-2 border-4 border-black rounded-full brutal-shadow">
+                <X size={24} />
+              </button>
+              <h1 className="text-2xl font-black italic uppercase">Synchronisation</h1>
+            </header>
+
+            {pendingContracts.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center">
+                <CheckCircle2 size={80} className="text-green-500 mb-4" />
+                <p className="font-black text-xl">Tout est à jour !</p>
+                <button 
+                  onClick={() => setStep('dashboard')}
+                  className="mt-6 font-black underline uppercase"
+                >
+                  Retour
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="bg-white border-4 border-black rounded-3xl p-6 mb-6 brutal-shadow">
+                  <p className="text-lg font-bold mb-2">{pendingContracts.length} contrat(s) en attente.</p>
+                  <p className="text-xs text-gray-500 font-bold italic">Connectez-vous au Wi-Fi pour envoyer les données.</p>
+                </div>
+
+                <div className="space-y-4 flex-1 overflow-y-auto mb-4">
+                  {pendingContracts.map((c) => (
+                    <div key={c.id} className="bg-white border-2 border-black p-4 rounded-xl flex justify-between items-center">
+                      <div>
+                        <p className="font-black uppercase">{c.worker.last_name} {c.worker.first_name}</p>
+                        <p className="text-xs text-gray-500 font-bold italic">Saisi le {new Date(c.createdAt).toLocaleDateString()}</p>
+                      </div>
+                      
+                      {syncResults[c.id] === 'loading' && <RefreshCw className="animate-spin text-brand-yellow" />}
+                      {syncResults[c.id] === 'success' && <CheckCircle2 className="text-green-500" />}
+                      {syncResults[c.id] === 'error' && <AlertTriangle className="text-red-500" />}
+                      {!syncResults[c.id] && <RefreshCw className="text-gray-300" />}
+                    </div>
+                  ))}
+                </div>
+
+                <button 
+                  onClick={handleSyncAll}
+                  disabled={isSyncing}
+                  className={`w-full py-6 rounded-3xl font-black text-2xl brutal-shadow-lg border-4 border-black ${
+                    isSyncing ? 'bg-gray-400' : 'bg-brand-yellow'
+                  }`}
+                >
+                  {isSyncing ? 'ENVOI EN COURS...' : 'TOUT ENVOYER'}
+                </button>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
